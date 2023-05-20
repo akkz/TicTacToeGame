@@ -36,14 +36,13 @@ void AChessBoard::UpdateChessPreviewInChessBoardPosition(FVector WorldLocation)
 	}
 	if (IsValid(PlaceHolderActorInstance))
 	{
-		PlaceHolderActorInstance->SetHidden(false);
+		PlaceHolderActorInstance->SetActorHiddenInGame(false);
 		PlaceHolderActorInstance->SetActorLocation(Location);
 	}
 }
 
 void AChessBoard::PlaceChessInChessBoardPosition(FVector WorldLocation, bool bWhite)
 {
-	
 	FVector RelatedLocation = GetActorTransform().InverseTransformPosition(WorldLocation);
 
 	// 寻找合适的位置
@@ -54,6 +53,20 @@ void AChessBoard::PlaceChessInChessBoardPosition(FVector WorldLocation, bool bWh
 	}
 	
 	PlaceChessInIndex(Index, bWhite ? EChessBoardState::WHITE : EChessBoardState::BLACK);
+}
+
+bool AChessBoard::CanPlaceChess(FVector WorldLocation)
+{
+	FVector RelatedLocation = GetActorTransform().InverseTransformPosition(WorldLocation);
+
+	// 寻找合适的位置
+	int32 Index = GetBestLocationInChessBoard(RelatedLocation);
+	if (Index < 0)
+	{
+		return false;
+	}
+
+	return ChessBoard[Index] == EChessBoardState::EMPTY;
 }
 
 EChessBoardResult AChessBoard::GetCurrentState()
@@ -98,15 +111,43 @@ void AChessBoard::BeginPlay()
 	ResetChessBoard();
 }
 
-void AChessBoard::AutoMove(bool bIsWhite)
+void AChessBoard::AutoMove(bool bIsWhite, int32 MaxDepth)
 {
 	int32 BestMove = -1;
-	MiniMax(0, bIsWhite, bIsWhite, BestMove);
+	MiniMax(0, bIsWhite, bIsWhite, BestMove, MaxDepth);
 
 	if (BestMove != -1)
 	{
 		PlaceChessInIndex(BestMove, bIsWhite ? EChessBoardState::WHITE : EChessBoardState::BLACK);
 	}
+	else
+	{
+		RandomMove(bIsWhite);
+	}
+}
+
+void AChessBoard::RandomMove(bool bIsWhite)
+{
+	TArray<int32> EmptySlot;
+	
+	for (int i = 0; i < CHESSBOARD_WIDTH; ++i)
+	{
+		for (int j = 0; j < CHESSBOARD_WIDTH; ++j)
+		{
+			int32 Index = i + j * CHESSBOARD_WIDTH;
+
+			// 如果可以下棋，那么缓存
+			if (ChessBoard[Index] == EChessBoardState::EMPTY)
+			{
+				EmptySlot.Add(Index);
+			}
+		}
+	}
+
+	int32 RandIndex = EmptySlot[FMath::RandRange(0, EmptySlot.Num()-1)];
+	PlaceChessInIndex(RandIndex, bIsWhite ? EChessBoardState::WHITE : EChessBoardState::BLACK);
+
+	return;
 }
 
 void AChessBoard::ResetChessBoard()
@@ -153,8 +194,9 @@ void AChessBoard::RemoveFirstCacheOperate()
 	}
 }
 
-int32 AChessBoard::MiniMax(int32 Depth, bool bCurrentWhite, bool bIsWhite, int32& BestMoveIndex)
+int32 AChessBoard::MiniMax(int32 Depth, bool bCurrentWhite, bool bIsWhite, int32& BestMoveIndex, int32 MaxDepth)
 {
+	// 胜负检查
 	EChessBoardResult ChessBoardResult = GetCurrentState();
 	if (ChessBoardResult == EChessBoardResult::BLACK_WIN || ChessBoardResult == EChessBoardResult::WHITE_WIN)
 	{
@@ -173,6 +215,13 @@ int32 AChessBoard::MiniMax(int32 Depth, bool bCurrentWhite, bool bIsWhite, int32
 		return 0;
 	}
 
+	// 迭代深度检查
+	if (Depth >= MaxDepth)
+	{
+		// 想不出来的情况按照最坏情况处理
+		return -10;
+	}
+
 	int32 BestScore = bCurrentWhite == bIsWhite ? -10 : 10;
 
 	for (int i = 0; i < CHESSBOARD_WIDTH; ++i)
@@ -185,7 +234,7 @@ int32 AChessBoard::MiniMax(int32 Depth, bool bCurrentWhite, bool bIsWhite, int32
 			if (ChessBoard[Index] == EChessBoardState::EMPTY)
 			{
 				ChessBoard[Index] = bIsWhite ? EChessBoardState::WHITE : EChessBoardState::BLACK;
-				int32 CurrentScore = MiniMax(Depth + 1, bCurrentWhite, !bIsWhite, BestMoveIndex);
+				int32 CurrentScore = MiniMax(Depth + 1, bCurrentWhite, !bIsWhite, BestMoveIndex, MaxDepth);
 				
 				if (bCurrentWhite == bIsWhite)
 				{
@@ -264,8 +313,14 @@ EChessBoardResult AChessBoard::PlaceChessInIndex(int32 Index, EChessBoardState S
 	}
 	ChessBoard[Index] = State;
 
+	// 隐藏PlaceHolder
+	if (IsValid(PlaceHolderActorInstance))
+	{
+		PlaceHolderActorInstance->SetActorHiddenInGame(true);
+	}
+
 	// 棋子放置
-	FVector Location = GetActorTransform().TransformPosition(ChessPosition[Index]);
+	FVector Location = GetActorTransform().TransformPosition(ChessPosition[Index]) + ChessSpawnOffset;
 
 	TSubclassOf<AActor> ChessActorType = State == EChessBoardState::WHITE ? ChessActorType_White : ChessActorType_Black;
 	if (IsValid(ChessActorType))

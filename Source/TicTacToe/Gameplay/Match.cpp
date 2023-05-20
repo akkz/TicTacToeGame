@@ -112,10 +112,6 @@ void AMatch::SwitchRound()
 	// 更新轮次
 	bPlayerRound = !bPlayerRound;
 
-	// 更新时间
-	CurrentRoundStartTime = World->GetTimeSeconds();
-	CurrentRoundTime = RoundTimeConfig ? RoundTimeConfig->GetFloatValue(CurrentRoundStartTime) : -1;
-
 	// Fast模式玩法
 	if (bFastMode)
 	{
@@ -125,19 +121,22 @@ void AMatch::SwitchRound()
 			// 移除第一次放置的棋子
 			ChessBoard->RemoveFirstCacheOperate();
 		}
-	}
 
-	// 创建新Timer
-	if (CurrentRoundTime > 0)
-	{
-		World->GetTimerManager().SetTimer(RoundTimerHandle, FTimerDelegate::CreateWeakLambda(this, [this]()
+		// 更新时间
+		CurrentRoundStartTime = World->GetTimeSeconds();
+		CurrentRoundTime = RoundTimeConfig ? RoundTimeConfig->GetFloatValue(CurrentRoundStartTime) : -1;
+
+		// 创建新Timer
+		if (CurrentRoundTime > 0)
 		{
-			ChessBoard->AutoMove(!(bPlayerRound ^ bPlayerWhite));
+			World->GetTimerManager().SetTimer(RoundTimerHandle, FTimerDelegate::CreateWeakLambda(this, [this]()
+			{
+				ChessBoard->RandomMove(!(bPlayerRound ^ bPlayerWhite));
 			
-			SwitchRound();
-		}), CurrentRoundTime, false);
+				SwitchRound();
+			}), CurrentRoundTime, false);
+		}
 	}
-	
 }
 
 bool AMatch::IsMatchRunning()

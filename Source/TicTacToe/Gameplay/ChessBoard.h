@@ -31,6 +31,12 @@ public:
 	void PlaceChessInChessBoardPosition(FVector WorldLocation, bool bWhite);
 
 	/**
+	 * 放置棋子
+	 */
+	UFUNCTION(BlueprintCallable)
+	bool CanPlaceChess(FVector WorldLocation);
+
+	/**
 	 * 查询当前胜负状态
 	 * @return 
 	 */
@@ -41,7 +47,13 @@ public:
 	 * 自动挑选最合适的步骤
 	 */
 	UFUNCTION(BlueprintCallable)
-	void AutoMove(bool bIsWhite);
+	void AutoMove(bool bIsWhite, int32 MaxDepth = 9);
+
+	/**
+	 * 随机放在某个空位上
+	 */
+	UFUNCTION(BlueprintCallable)
+	void RandomMove(bool bIsWhite);
 
 	/**
 	 * 重置棋盘
@@ -87,12 +99,19 @@ protected:
 	// 棋子缓存
 	UPROPERTY(BlueprintReadWrite)
 	TArray<FOperatorCache> ChessCache;
+	// 棋子spawn位置偏移，用于模拟物理效果
+	UPROPERTY(EditAnywhere)
+	FVector ChessSpawnOffset;
 
 	/**
 	 * 自动下棋步骤评分
-	 * @param Depth 
+	 * @param Depth 迭代深度
+	 * @param bIsPlayer 当前是否为玩家操作
+	 * @param bIsPlayerWhite 玩家是否是白棋
+	 * @param BestMoveIndex 最佳放置位置（返回值）
+	 * @param MaxDepth 控制AI智商 
 	 */
-	int32 MiniMax(int32 Depth, bool bIsPlayer, bool bIsPlayerWhite, int32& BestMoveIndex);
+	int32 MiniMax(int32 Depth, bool bIsPlayer, bool bIsPlayerWhite, int32& BestMoveIndex, int32 MaxDepth = 9);
 
 	/**
 	 * 内部State到Result转换方法
