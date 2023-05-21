@@ -32,12 +32,14 @@ void AMatch::StartMatch(bool bPlayerFirst, bool bInFastMode)
 {
 	UWorld* World = GetWorld();
 	check(World);
+
+	MatchStartTime = World->GetTimeSeconds();
 	
 	ChessBoard = Cast<AChessBoard>(UGameplayStatics::GetActorOfClass(this, AChessBoard::StaticClass()));
 	check(ChessBoard);
 	ChessBoard->ResetChessBoard();
 	
-	bPlayerRound = !bPlayerFirst;
+	bPlayerRound = bPlayerFirst;
 	bPlayerWhite = bPlayerFirst;
 
 	bFastMode = bInFastMode;
@@ -49,7 +51,7 @@ void AMatch::StartMatch(bool bPlayerFirst, bool bInFastMode)
 	if (LoadingTime == 0)
 	{
 		MatchState = EMatchState::RUNNING;
-		SwitchRound();
+		StartRound();
 	}
 	else
 	{
@@ -57,7 +59,7 @@ void AMatch::StartMatch(bool bPlayerFirst, bool bInFastMode)
 		World->GetTimerManager().SetTimer(LoadingTimerHandle, FTimerDelegate::CreateWeakLambda(this, [this]()
 		{
 			MatchState = EMatchState::RUNNING;
-			SwitchRound();
+			StartRound();
 		}), LoadingTime, false);
 	}
 }
@@ -77,16 +79,49 @@ void AMatch::ResetMatch()
 	BP_OnMatchReady();
 }
 
-void AMatch::SwitchRound()
+void AMatch::StartRound()
 {
 	UWorld* World = GetWorld();
 	check(World);
 
 	check(ChessBoard);
 
-	// 清理旧的Timer
-	World->GetTimerManager().ClearTimer(RoundTimerHandle);
+	// Fast模式玩法
+	if (bFastMode)
+	{
+		// 清理旧的Timer
+		World->GetTimerManager().ClearTimer(RoundTimerHandle);
+		
+		uint8 PlacedChessAmount = ChessBoard->GetPlacedChessAmount();
+		if (PlacedChessAmount == 7)
+		{
+			// 移除第一次放置的棋子
+			ChessBoard->RemoveFirstCacheOperate();
+			ChessBoard->RemoveFirstCacheOperate();
+		}
 
+		// 更新时间
+		CurrentRoundStartTime = World->GetTimeSeconds() - MatchStartTime;
+		CurrentRoundTime = RoundTimeConfig ? RoundTimeConfig->GetFloatValue(CurrentRoundStartTime) : -1;
+
+		// 创建新Timer
+		if (CurrentRoundTime > 0)
+		{
+			World->GetTimerManager().SetTimer(RoundTimerHandle, FTimerDelegate::CreateWeakLambda(this, [this]()
+			{
+				ChessBoard->RandomMove(!(bPlayerRound ^ bPlayerWhite));
+			
+				SwitchRound();
+			}), CurrentRoundTime, false);
+		}
+	}
+}
+
+void AMatch::SwitchRound()
+{
+	UWorld* World = GetWorld();
+	check(World);
+	
 	// 检查游戏是否结束了
 	EChessBoardResult CurrentChessBoardResult = ChessBoard->GetCurrentState();
 	if (CurrentChessBoardResult == EChessBoardResult::BLACK_WIN || CurrentChessBoardResult == EChessBoardResult::WHITE_WIN || CurrentChessBoardResult == EChessBoardResult::DRAW)
@@ -103,44 +138,33 @@ void AMatch::SwitchRound()
 			MatchState = (bPlayerWhite ^ (CurrentChessBoardResult == EChessBoardResult::WHITE_WIN)) ? EMatchState::PLAYER_LOST : EMatchState::PLAYER_WIN;
 		}
 
+		// 清理旧的Timer
+		World->GetTimerManager().ClearTimer(RoundTimerHandle);
+
 		BP_OnMatchFinished();
 		
 		// 如果已经结束，则直接返回，不处理了
 		return;
 	}
 
+	BP_OnSwitchRound();
+	
 	// 更新轮次
 	bPlayerRound = !bPlayerRound;
 
-	// Fast模式玩法
-	if (bFastMode)
-	{
-		uint8 PlacedChessAmount = ChessBoard->GetPlacedChessAmount();
-		if (PlacedChessAmount == 8)
-		{
-			// 移除第一次放置的棋子
-			ChessBoard->RemoveFirstCacheOperate();
-		}
-
-		// 更新时间
-		CurrentRoundStartTime = World->GetTimeSeconds();
-		CurrentRoundTime = RoundTimeConfig ? RoundTimeConfig->GetFloatValue(CurrentRoundStartTime) : -1;
-
-		// 创建新Timer
-		if (CurrentRoundTime > 0)
-		{
-			World->GetTimerManager().SetTimer(RoundTimerHandle, FTimerDelegate::CreateWeakLambda(this, [this]()
-			{
-				ChessBoard->RandomMove(!(bPlayerRound ^ bPlayerWhite));
-			
-				SwitchRound();
-			}), CurrentRoundTime, false);
-		}
-	}
+	StartRound();
 }
 
 bool AMatch::IsMatchRunning()
 {
 	return MatchState == EMatchState::RUNNING;
+}
+
+float AMatch::GetRoundTime()
+{
+	UWorld* World = GetWorld();
+	check(World);
+
+	return World->GetTimeSeconds() - MatchStartTime - CurrentRoundStartTime;
 }
 
